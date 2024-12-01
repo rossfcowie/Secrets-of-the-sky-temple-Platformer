@@ -1,109 +1,72 @@
 
+using System;
+using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.UIElements;
 public class PlayerController2D : MonoBehaviour
 {
 
-    public float moveSpeed = 5f;
+    public float moveSpeed = Player.movespeed;
     public float jumpForce = 10f;
     public float crouchHeight = 0.5f;
     public LayerMask groundLayer;
+    public LayerMask deathLayer;
 
     private Rigidbody2D rb;
     private BoxCollider2D collider;
+    public BoxCollider2D collider2;
     private Animator animator;
     private bool isGrounded;
 
-    void Start()
+    void Awake()
     {
+        Player.gameObject  = gameObject;
         rb = GetComponent<Rigidbody2D>();
         collider = GetComponent<BoxCollider2D>();
         animator = GetComponent<Animator>();
     }
     //Crouches
-    bool waterCrouch = true;//Shrinks user
-    bool firedash = true;//Shrinks user, burns ground breakable walls 
+    bool waterCrouch = Player.player.spellbook[type.water] == spell.dash;//Shrinks user
+    bool firedash = Player.player.spellbook[type.fire] == spell.dash;//Shrinks user, burns ground breakable walls 
 //Double Jumps
-    bool airJump = true;  //Unlimited (by mana) jumps
-    bool fireJump = false; //Burns roof breakable walls
-    bool waterJump = false; //single extra jump
+    bool airJump = Player.player.spellbook[type.air] == spell.jump;  //Unlimited (by mana) jumps
+    bool fireJump = Player.player.spellbook[type.fire] == spell.jump; //Burns roof breakable walls
 
+    bool waterJump = Player.player.spellbook[type.water] == spell.jump; //single extra jump
 //Climb/glide
-    bool earthwallclimb = false; //Climb certain walls
-    bool airGlide = false; // Long range glide.
+    bool earthwallclimb = Player.player.spellbook[type.earth] == spell.climb; //Climb certain walls
+    bool airGlide = Player.player.spellbook[type.air] == spell.glide; // Long range glide.
 
 //Platforms
-    bool earthplatform = true; //Extend a platform below you.
-    bool airplatform = false; //Create a platform in the air, temporarily.
+    bool earthplatform = Player.player.spellbook[type.earth] == spell.platform; //Extend a platform below you.
+    bool airplatform = Player.player.spellbook[type.air] == spell.platform; //Create a platform in the air, temporarily.
 
 //Wall breakers
-    bool waterblast = false; //Breaks water breakable walls
-    bool fireblast = false; //breaks fire breakable walls.
+    bool waterblast = Player.player.spellbook[type.water] == spell.blast; //Breaks water breakable walls
+    bool fireblast = Player.player.spellbook[type.fire] == spell.blast; //breaks fire breakable walls.
 
     bool cancast = false;
-    void FixedUpdate()
-    {
+    
+    public void FixedUpdate()
+    {  
         animator.SetBool("Is_Jumping", false);
+                    animator.SetBool("IsWalled", false);
         // Handle horizontal movement
         // Check if the character can jump
-        isGrounded = Physics2D.OverlapArea(new Vector2(collider.bounds.min.x, collider.bounds.min.y), new Vector2(collider.bounds.max.x, collider.bounds.min.y - 0.1f), groundLayer);
-        if (isGrounded)
-        {
-            Debug.Log("Grounded");
-
-            float move = Input.GetAxis("Horizontal");
-            rb.velocity = new Vector2(move * moveSpeed, rb.velocity.y);
-            animator.SetBool("Is_moving", move != 0);
-            bool x = move != 0;
-            if (x)
-            {
-                gameObject.GetComponent<SpriteRenderer>().flipX = move < 0;
-                cancast = firedash;
-            }
-        }
-        else
-        {
-            Debug.Log("Not Grounded");
-
-            float move = Input.GetAxis("Horizontal");
-            rb.velocity = new Vector2((move * moveSpeed) / 2, rb.velocity.y);
-            bool x = move != 0;
-            if (x)
-            {
-                gameObject.GetComponent<SpriteRenderer>().flipX = move < 0;
-            }
-
-            Collider2D[] collidersWall = Physics2D.OverlapAreaAll(new Vector2(collider.bounds.min.x, collider.bounds.min.y), new Vector2(collider.bounds.max.x, collider.bounds.max.y), groundLayer);
-            for (int i = 0; i < collidersWall.Length; i++)
-            {
-                if (collidersWall[i].gameObject != null)
-                {
-                    rb.velocity = new Vector2(0, rb.velocity.y);
-                }
-            }
-
-        }
-        if (Input.GetAxis("Vertical") > 0 && isGrounded)
+        isGrounded = Physics2D.OverlapCircle(new Vector2((collider.bounds.min.x + collider.bounds.max.x) / 2, collider.bounds.min.y),0.175f, groundLayer);
+        Player.player.interact = Player.player.interact==Player.Interact.Interact?Player.Interact.Interact:isGrounded?Player.Interact.Cast:Player.Interact.CastAriel;
+        
+            animator.SetBool("IsGrounded", isGrounded);
+        if (Player.upDown())
         {
             animator.SetBool("Is_Jumping", true);
             Jump();
         }
-        else
-        {
-            if (Input.GetAxis("Vertical") > 0 && airJump && Input.GetKey(KeyCode.Z))
-            {
-                animator.SetBool("Is_Jumping", true);
-                Jump();
-            }
-        }
 
 
-            if (Input.GetAxis("Vertical") < 0) // Crouch key
+            if (Player.DownDown()) // Crouch key
             {
                 animator.SetBool("Is_Crouched", true);
-                if (waterCrouch)
-                {
-                    cancast = true;
-                }
             }
             else
             {
@@ -114,23 +77,79 @@ public class PlayerController2D : MonoBehaviour
 
                 }
             }
-            cancast = earthplatform;
 
-            if (Input.GetKey(KeyCode.Z) && cancast)
+        if (isGrounded)
+        {
+            Debug.Log("Grounded");
+
+            float move = Player.GetHorizontal();
+            rb.velocity = new Vector2(move * moveSpeed, rb.velocity.y);
+            animator.SetBool("Is_moving", move != 0);
+            bool x = move != 0;
+            if (x)
             {
-                Debug.Log("Casting");
-                animator.SetBool("IsCasting", true);
+                gameObject.GetComponent<Transform>().rotation =move > 0?new Quaternion(0,0,0,0): new Quaternion(0,180,0,0);
+            }
+            isWalled();
+        }
+        else
+        {
+            Debug.Log("Not Grounded");
+
+            float move = Player.GetHorizontal();
+            rb.velocity = new Vector2((move * moveSpeed) / 2, rb.velocity.y);
+            bool x = move != 0;
+            if (x)
+            {
+                gameObject.GetComponent<Transform>().rotation =move > 0?
+                 new Quaternion(0,0,0,0): new Quaternion(0,180,0,0);
+            }
+
+            isWalled();
+
+        }
+
+            if (Player.Casting()&&Player.canCast(isGrounded))
+            {
+                animator.SetInteger("IsCasting", Player.CastingCount());
             }
             else
             {
-                animator.SetBool("IsCasting", false);
+                animator.SetInteger("IsCasting", Player.CastingCount());
+
+            }
+
+        if (Physics2D.OverlapCircle(new Vector2((collider.bounds.min.x + collider.bounds.max.x) / 2, collider.bounds.min.y), 0.15f, deathLayer))
+            {
+                animator.SetBool("IsDying", true);
+            }
+            else
+            {
+
 
             }
         }
 
-        void Jump()
+    private void isWalled()
+    {
+                    Collider2D[] collidersWall = Physics2D.OverlapAreaAll(new Vector2(collider2.bounds.min.x, collider2.bounds.min.y), new Vector2(collider2.bounds.max.x, collider2.bounds.max.y), groundLayer);
+            Debug.Log(collidersWall.Length);
+            for (int i = 0; i < collidersWall.Length; i++)
+            {
+                if (collidersWall[i].gameObject != null)
+                {
+                Debug.Log(collidersWall[i].gameObject.name);
+
+                float move = Player.GetHorizontal();
+                    Player.animator.SetBool("IsWalled", true);
+                    rb.velocity = move!=0?new Vector2(rb.velocity.x, Player.Verticalsmovespeed * Math.Abs(move)):new Vector2(rb.velocity.x, rb.velocity.y);
+                }
+            }
+    }
+
+    void Jump()
         {
-            rb.velocity = new Vector2(rb.velocity.x, jumpForce);
+           // rb.velocity = new Vector2(rb.velocity.x, jumpForce);
         }
 
 
